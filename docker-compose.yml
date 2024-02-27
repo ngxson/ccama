@@ -19,6 +19,6 @@ services:
         mkdir -p build
         cd build
         cmake ..
-        cmake --build . --config Release --target experiments --verbose
+        cmake --build . --config Release --target experiments
 
         cp bin/* ..

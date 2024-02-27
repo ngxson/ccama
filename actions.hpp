@@ -93,7 +93,7 @@ inline static ggml_type kv_cache_type_from_str(const std::string &s)
 //////////////////////////////////////////
 //////////////////////////////////////////
 
-void action_load(app_t &app, json &body)
+json action_load(app_t &app, json &body)
 {
   std::string model_path = body["model_path"];
   auto mparams = llama_model_default_params();
@@ -131,14 +131,14 @@ void action_load(app_t &app, json &body)
     cparams.type_k = kv_cache_type_from_str(body["cache_type_v"]);
   app.model = llama_load_model_from_file(model_path.c_str(), mparams);
   app.ctx = llama_new_context_with_model(app.model, cparams);
-  send_response(json{
+  return json{
       {"success", true},
       {"token_bos", llama_token_bos(app.model)},
       {"token_eos", llama_token_eos(app.model)},
-  });
+  };
 }
 
-void action_sampling_init(app_t &app, json &body)
+json action_sampling_init(app_t &app, json &body)
 {
   // sampling
   llama_sampling_params sparams;
@@ -190,11 +190,11 @@ void action_sampling_init(app_t &app, json &body)
       llama_sampling_accept(app.ctx_sampling, app.ctx, id, false);
     }
   }
-  send_response(json{{"success", true}});
+  return json{{"success", true}};
 }
 
 // lookup single token (also be able to check if it exists or not)
-void action_lookup_token(app_t &app, json &body)
+json action_lookup_token(app_t &app, json &body)
 {
   std::string piece = body["piece"];
   int32_t max_tokens = llama_n_vocab(app.model);
@@ -203,32 +203,31 @@ void action_lookup_token(app_t &app, json &body)
     std::string token_as_str = llama_token_to_piece(app.ctx, id);
     if (token_as_str == piece)
     {
-      send_response(json{
+      return json{
           {"success", true},
           {"token", id},
-      });
-      return;
+      };
     }
   }
   // not found
-  send_response(json{{"success", false}});
+  return json{{"success", false}};
 }
 
 // tokenize an input string
-void action_tokenize(app_t &app, json &body)
+json action_tokenize(app_t &app, json &body)
 {
   std::string text = body["text"];
   bool special = body.count("special") > 0;
   std::vector<llama_token> tokens_list;
   tokens_list = ::llama_tokenize(app.model, text, false, special);
-  send_response(json{
+  return json{
       {"success", true},
       {"tokens", tokens_list},
-  });
+  };
 }
 
 // detokenize a list of tokens
-void action_detokenize(app_t &app, json &body)
+json action_detokenize(app_t &app, json &body)
 {
   std::vector<llama_token> tokens = body["tokens"];
   std::stringstream output;
@@ -237,14 +236,14 @@ void action_detokenize(app_t &app, json &body)
     output << llama_token_to_piece(app.ctx, id);
   }
   std::string parsed_str = output.str();
-  send_response(json{
+  return json{
       {"success", true},
       {"buffer", convert_string_to_int_arr(parsed_str)},
-  });
+  };
 }
 
 // evaluate an array of tokens
-void action_eval(app_t &app, json &body)
+json action_eval(app_t &app, json &body)
 {
   std::vector<llama_token> tokens_list = body["tokens"];
   bool skip_logits = body.count("skip_logits") > 0;
@@ -277,43 +276,43 @@ void action_eval(app_t &app, json &body)
   }
   if (llama_decode(app.ctx, app.batch) != 0)
   {
-    send_response(json{{"error", "llama_decode failed"}});
+    return json{{"error", "llama_decode failed"}};
   }
   else
   {
-    send_response(json{
+    return json{
         {"success", true},
         {"n_past", app.tokens.size()},
-    });
+    };
   }
 }
 
 // decode the current logits
-void action_decode_logits(app_t &app, json &body)
+json action_decode_logits(app_t &app, json &body)
 {
   int32_t idx = app.batch.n_tokens - 1;
   const llama_token new_token_id = llama_sampling_sample(app.ctx_sampling, app.ctx, NULL, idx);
   std::string piece = llama_token_to_piece(app.ctx, new_token_id);
-  send_response(json{
+  return json{
       {"success", true},
       {"piece", convert_string_to_int_arr(piece)},
       {"token", new_token_id},
-  });
+  };
 }
 
 // accept this token
-void action_sampling_accept(app_t &app, json &body)
+json action_sampling_accept(app_t &app, json &body)
 {
   std::vector<llama_token> tokens_list = body["tokens"];
   for (auto id : tokens_list)
   {
     llama_sampling_accept(app.ctx_sampling, app.ctx, id, false);
   }
-  send_response(json{{"success", true}});
+  return json{{"success", true}};
 }
 
 // remove tokens in kv, for context-shifting
-void action_kv_remove(app_t &app, json &body)
+json action_kv_remove(app_t &app, json &body)
 {
   const int n_keep = body["n_keep"];
   const int n_discard = body["n_discard"];
@@ -323,14 +322,14 @@ void action_kv_remove(app_t &app, json &body)
   app.tokens.erase(
       app.tokens.begin() + n_keep,
       app.tokens.begin() + n_keep + n_discard);
-  send_response(json{
+  return json{
       {"success", true},
       {"n_past", app.tokens.size()},
-  });
+  };
 }
 
 // save current session
-void action_session_save(app_t &app, json &body)
+json action_session_save(app_t &app, json &body)
 {
   std::string session_path = body["session_path"];
   std::vector<llama_token> dummy;
@@ -340,16 +339,16 @@ void action_session_save(app_t &app, json &body)
           dummy.data(),
           dummy.size()))
   {
-    send_response(json{{"error", "action_session_save failed"}});
+    return json{{"error", "action_session_save failed"}};
   }
-  send_response(json{
+  return json{
       {"success", true},
       {"tokens", app.tokens},
-  });
+  };
 }
 
 // load a session from disk
-void action_session_load(app_t &app, json &body)
+json action_session_load(app_t &app, json &body)
 {
   std::string session_path = body["session_path"];
   std::vector<llama_token> saved_tokens = body["tokens"];
@@ -363,7 +362,7 @@ void action_session_load(app_t &app, json &body)
           dummy.capacity(),
           &n_token_count_out))
   {
-    send_response(json{{"error", "llama_load_session_file failed"}});
+    return json{{"error", "llama_load_session_file failed"}};
   }
   // load tokens
   app.tokens.clear();
@@ -372,14 +371,14 @@ void action_session_load(app_t &app, json &body)
   {
     app.tokens.push_back(id);
   }
-  send_response(json{{"success", true}});
+  return json{{"success", true}};
 }
 
 // get the current status
-void action_current_status(app_t &app, json &body)
+json action_current_status(app_t &app, json &body)
 {
-  send_response(json{
+  return json{
       {"success", true},
       {"tokens", app.tokens},
-  });
+  };
 }
