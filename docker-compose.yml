@@ -1,0 +1,24 @@
+version: '3'
+services:
+  llamacpp-builder:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM ubuntu:jammy
+        RUN apt update && apt install -y git build-essential cmake
+    user: "${D_UID}:${D_GID}"
+    volumes:
+      - .:/app:Z
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+
+        cd /app
+        mkdir -p build
+        cd build
+        cmake ..
+        cmake --build . --config Release --target experiments --verbose
+
+        cp bin/* ..
