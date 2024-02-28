@@ -20,6 +20,9 @@ int main(int argc, char ** argv) {
   app_t app;
   json res;
   json req;
+  time_t start, end;
+  double time_taken;
+  size_t output_size;
 
   req = json{
     {"model_path", std::string(argv[1])},
@@ -29,30 +32,68 @@ int main(int argc, char ** argv) {
   };
   res = action_load(app, req);
   std::cout << "action_load: " << res << "\n";
+  int token_bos = res["token_bos"];
+  int token_eos = res["token_eos"];
 
   req = json{};
   res = action_sampling_init(app, req);
 
-  std::string text = "The sky is blue. The sun is yellow. Here we go. There and back again. ";
+  std::string text =
+    "<|im_start|>system\nYou are a helpful assistant<|im_end|>\n"
+    "<|im_start|>user\nWho are you?<|im_end|>\n";
+    "<|im_start|>assistant\n";
   req = json{
-    {"text", text + text + text + text + text},
+    {"text", text},
   };
   res = action_tokenize(app, req);
   std::cout << "action_tokenize: " << res << "\n";
 
   std::vector<int> tokens_to_eval = res["tokens"];
+  tokens_to_eval.insert(tokens_to_eval.begin(), token_bos);
   req = json{
     {"tokens", tokens_to_eval},
   };
   res = action_eval(app, req);
   std::cout << "action_eval: " << res << "\n";
 
-  time_t start, end; 
-  time(&start);
-  ccama_save_session_file_quant(app.ctx, "./state.bin");
-  time(&end);
-  double time_taken = double(end - start); 
-  std::cout << "Time taken : " << time_taken << " sec";
+  std::vector<uint8_t> state(llama_get_state_size(app.ctx));
+
+  for (int i = 0; i < 10; i++) {
+    std::cout << "Save state" << res << "\n";
+    time(&start);
+    output_size = cama_copy_state_data_quant(app.ctx, state.data()) / 1024;
+    time(&end);
+    time_taken = double(end - start) * 1000; 
+    std::cout << "Time taken : " << time_taken << " ms" << "\n";
+    std::cout << "output_size : " << output_size << " kb" << "\n";
+
+    std::cout << "Load state" << res << "\n";
+    time(&start);
+    ccama_set_state_data_quant(app.ctx, state.data());
+    time(&end);
+    time_taken = double(end - start) * 1000; 
+    std::cout << "Time taken : " << time_taken << " ms" << "\n";
+  }
+
+  for (int i = 0; i < 10; i++) {
+    req = json{};
+    res = action_decode_logits(app, req);
+    std::vector<uint8_t> text_out;
+    std::vector<int> text_buf = res["piece"];
+    for (auto b : text_buf) text_out.push_back(b);
+
+    std::cout << std::string((char *) text_out.data(), text_out.size()) << std::flush;
+
+    std::vector<int> new_tokens;
+    new_tokens.push_back(res["token"]);
+    req = json{
+      {"tokens", new_tokens},
+    };
+    res = action_eval(app, req);
+  }
+
+  std::cout << "\n";
+  std::cout << "---------------" << "\n";
 
   // clean up
   llama_free(app.ctx);
