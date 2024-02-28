@@ -3,11 +3,15 @@
 #include <string>
 #include <sstream>
 #include <stdio.h>
+#include <chrono>
 #include <bits/stdc++.h> 
 
 #include "llama.h"
 #include "common.h"
 #include "actions.hpp"
+
+#define TIMED std::chrono::high_resolution_clock::now()
+#define CALC_TIMED std::chrono::duration_cast<std::chrono::milliseconds>(tend - tstart).count()
 
 int main(int argc, char ** argv) {
   if (argc < 2) {
@@ -20,7 +24,8 @@ int main(int argc, char ** argv) {
   app_t app;
   json res;
   json req;
-  time_t start, end;
+  auto tstart = TIMED;
+  auto tend = TIMED;
   double time_taken;
   size_t output_size;
 
@@ -60,19 +65,17 @@ int main(int argc, char ** argv) {
 
   for (int i = 0; i < 10; i++) {
     std::cout << "Save state" << res << "\n";
-    time(&start);
+    tstart = TIMED;
     output_size = cama_copy_state_data_quant(app.ctx, state.data()) / 1024;
-    time(&end);
-    time_taken = double(end - start) * 1000; 
-    std::cout << "Time taken : " << time_taken << " ms" << "\n";
+    tend = TIMED;
+    std::cout << "Time taken : " << CALC_TIMED << " ms" << "\n";
     std::cout << "output_size : " << output_size << " kb" << "\n";
 
     std::cout << "Load state" << res << "\n";
-    time(&start);
+    tstart = TIMED;
     ccama_set_state_data_quant(app.ctx, state.data());
-    time(&end);
-    time_taken = double(end - start) * 1000; 
-    std::cout << "Time taken : " << time_taken << " ms" << "\n";
+    tend = TIMED;
+    std::cout << "Time taken : " << CALC_TIMED << " ms" << "\n";
   }
 
   for (int i = 0; i < 10; i++) {

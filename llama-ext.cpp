@@ -3,7 +3,13 @@
 /////////////////////////////////////////////////////////////////////////////////////
 
 
+#include "ggml-quants.h"
 #define CCAMA_SAVE_QUANT GGML_TYPE_Q4_K
+
+static size_t ccama_get_size_quant(size_t nelem) {
+    assert(nelem % QK_K == 0); // for K-quant
+    return (nelem/QK_K*sizeof(block_q4_K));
+}
 
 // Save state FP16 to quantized Q8
 
@@ -27,7 +33,7 @@ static size_t ccama_fp16_to_q8(ggml_tensor * tensor, uint8_t * input_fp16, uint8
     // quantize to GGML_TYPE_Q8_0
     ggml_type_traits_t qfns = ggml_internal_get_type_traits(CCAMA_SAVE_QUANT);
     qfns.from_float(tmp_buf_32.data(), output_q8, nelements);
-    return nelements * sizeof(ggml_fp16_t);
+    return ccama_get_size_quant(nelements);
 }
 
 static void ccama_copy_state_quant(struct llama_context * ctx, llama_data_context * data_ctx) {
@@ -73,7 +79,6 @@ static void ccama_copy_state_quant(struct llama_context * ctx, llama_data_contex
             const size_t v_row_stride = ggml_row_size(kv_self.v_l[il]->type, n_ctx);
 
             tmp_buf.resize(v_row_size);
-            tmp_buf_q.resize(v_row_size);
             for (int ir = 0; ir < (int) n_embd_v_gqa; ++ir) {
                 ggml_backend_tensor_get(kv_self.v_l[il], tmp_buf.data(), ir*v_row_stride, tmp_buf.size());
 
@@ -177,15 +182,13 @@ size_t ccama_set_state_data_quant(struct llama_context * ctx, uint8_t * src) {
             tmp_buf.resize(k_size);
             ccama_q8_to_fp16(kv_self.k_l[il], inp, tmp_buf.data(), nelem);
             ggml_backend_tensor_set(kv_self.k_l[il], tmp_buf.data(), 0, k_size);
-            inp += nelem * sizeof(ggml_fp16_t);
+            inp += ccama_get_size_quant(nelem);
 
             // v is not contiguous, copy row by row
             const size_t v_row_size   = ggml_row_size(kv_self.v_l[il]->type, kv_head);
             const size_t v_row_stride = ggml_row_size(kv_self.v_l[il]->type, n_ctx);
-            nelem = v_row_size / sizeof(ggml_fp16_t);
 
             for (int ir = 0; ir < (int) n_embd_v_gqa; ++ir) {
-                tmp_buf.resize(v_row_size);
                 // no quant for V
                 ggml_backend_tensor_set(kv_self.v_l[il], inp, ir*v_row_stride, v_row_size);
                 inp += v_row_size; //nelem * sizeof(ggml_fp16_t);
