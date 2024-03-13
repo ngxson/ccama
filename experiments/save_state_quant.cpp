@@ -58,8 +58,8 @@ int main(int argc, char ** argv) {
   req = json{
     {"tokens", tokens_to_eval},
   };
-  res = action_eval(app, req);
-  std::cout << "action_eval: " << res << "\n";
+  res = action_decode(app, req);
+  std::cout << "action_decode: " << res << "\n";
 
   std::vector<uint8_t> state(llama_get_state_size(app.ctx));
 
@@ -80,7 +80,7 @@ int main(int argc, char ** argv) {
 
   for (int i = 0; i < 10; i++) {
     req = json{};
-    res = action_decode_logits(app, req);
+    res = action_sampling_sample(app, req);
     std::vector<uint8_t> text_out;
     std::vector<int> text_buf = res["piece"];
     for (auto b : text_buf) text_out.push_back(b);
@@ -92,7 +92,7 @@ int main(int argc, char ** argv) {
     req = json{
       {"tokens", new_tokens},
     };
-    res = action_eval(app, req);
+    res = action_decode(app, req);
   }
 
   std::cout << "\n";

@@ -102,6 +102,14 @@ json action_load(app_t &app, json &body)
   cparams.n_ctx = body["n_ctx"];
   cparams.n_threads = body["n_threads"];
   cparams.n_threads_batch = cparams.n_threads;
+  if (body.count("embeddings") > 0)
+    cparams.embeddings = body["embeddings"];
+  if (body.count("offload_kqv") > 0)
+    cparams.offload_kqv = body["offload_kqv"];
+  if (body.count("n_batch") > 0)
+    cparams.n_batch = body["n_batch"];
+  if (body.count("n_seq_max") > 0)
+    cparams.n_seq_max = body["n_seq_max"];
   // context extending: https://github.com/ggerganov/llama.cpp/pull/2054
   if (body.count("rope_scaling_type") > 0)
     cparams.rope_scaling_type = body["rope_scaling_type"];
@@ -131,6 +139,8 @@ json action_load(app_t &app, json &body)
     cparams.type_k = kv_cache_type_from_str(body["cache_type_v"]);
   app.model = llama_load_model_from_file(model_path.c_str(), mparams);
   app.ctx = llama_new_context_with_model(app.model, cparams);
+  llama_batch_free(app.batch);
+  app.batch = llama_batch_init(cparams.n_batch, 0, 1);
   return json{
       {"success", true},
       {"token_bos", llama_token_bos(app.model)},
@@ -242,8 +252,8 @@ json action_detokenize(app_t &app, json &body)
   };
 }
 
-// evaluate an array of tokens
-json action_eval(app_t &app, json &body)
+// decode an array of tokens
+json action_decode(app_t &app, json &body)
 {
   std::vector<llama_token> tokens_list = body["tokens"];
   bool skip_logits = body.count("skip_logits") > 0;
@@ -256,10 +266,6 @@ json action_eval(app_t &app, json &body)
   llama_batch_clear(app.batch);
   for (auto id : tokens_list)
   {
-    // send_response(json{
-    //     {"debug", "Input token"},
-    //     {"token", id},
-    //     {"piece", llama_token_to_piece(app.ctx, id)}});
     bool grp_attn_enabled = false; // TODO: maybe remove grp_attn
     int32_t n_past = grp_attn_enabled
                          ? app.n_past_self_extension
@@ -276,7 +282,7 @@ json action_eval(app_t &app, json &body)
   }
   if (llama_decode(app.ctx, app.batch) != 0)
   {
-    return json{{"error", "llama_decode failed"}};
+    return json{{"error", "llama_decode failed, maybe n_batch is too small?"}};
   }
   else
   {
@@ -287,8 +293,8 @@ json action_eval(app_t &app, json &body)
   }
 }
 
-// decode the current logits
-json action_decode_logits(app_t &app, json &body)
+// decode the current logits and sample the new token
+json action_sampling_sample(app_t &app, json &body)
 {
   int32_t idx = app.batch.n_tokens - 1;
   const llama_token new_token_id = llama_sampling_sample(app.ctx_sampling, app.ctx, NULL, idx);
@@ -311,6 +317,36 @@ json action_sampling_accept(app_t &app, json &body)
   return json{{"success", true}};
 }
 
+// get embeddings, this will call action_decode internally
+json action_embeddings(app_t &app, json &body)
+{
+  std::vector<llama_token> tokens_list = body["tokens"];
+  // allocate output
+  const int n_embd = llama_n_embd(app.model);
+  std::vector<float> embeddings(n_embd, 0); // single seq
+  float *out = embeddings.data();
+  // decode
+  json req = json{{"tokens", tokens_list}};
+  json res = action_decode(app, req);
+  if (res.count("error")) {
+    return res;
+  }
+  int32_t idx = app.batch.n_tokens - 1;
+  const float *embd = llama_get_embeddings_seq(app.ctx, 0);
+  if (embd == NULL) {
+      embd = llama_get_embeddings_ith(app.ctx, idx);
+      if (embd == NULL) {
+        fprintf(stderr, "%s: failed to get embeddings for token %d\n", __func__, idx);
+        return json{{"error", "failed to get embeddings"}};
+      }
+  }
+  llama_embd_normalize(embd, out, n_embd);
+  return json{
+      {"success", true},
+      {"embeddings", embeddings},
+  };
+}
+
 // remove tokens in kv, for context-shifting
 json action_kv_remove(app_t &app, json &body)
 {
@@ -322,6 +358,17 @@ json action_kv_remove(app_t &app, json &body)
   app.tokens.erase(
       app.tokens.begin() + n_keep,
       app.tokens.begin() + n_keep + n_discard);
+  return json{
+      {"success", true},
+      {"n_past", app.tokens.size()},
+  };
+}
+
+// clear all tokens in kv
+json action_kv_clear(app_t &app, json &body)
+{
+  llama_kv_cache_clear(app.ctx);
+  app.tokens.clear();
   return json{
       {"success", true},
       {"n_past", app.tokens.size()},

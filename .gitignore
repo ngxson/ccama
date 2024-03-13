@@ -1,4 +1,5 @@
 /build
 /save_state_quant
+/embeddings
 /*.bin
 /wasm/build
