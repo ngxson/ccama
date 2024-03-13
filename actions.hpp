@@ -8,6 +8,11 @@
 #include "json.hpp"
 #include "common.h"
 
+/**
+ * CCAMA project - A low-level llama.cpp API via JSON
+ * https://github.com/ngxson/ccama
+ */
+
 using json = nlohmann::json;
 
 #define LOG_JSON(str, ...)                                \
