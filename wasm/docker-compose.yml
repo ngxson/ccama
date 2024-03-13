@@ -1,0 +1,25 @@
+services:
+  llamacpp-wasm-builder:
+    container_name: llamacpp-wasm-builder
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM emscripten/emsdk:3.1.55
+        RUN apt update && apt install -y git
+    user: "${D_UID}:${D_GID}"
+    volumes:
+      - ..:/source:Z
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        cd /source/wasm
+
+        mkdir -p build
+        cd build
+
+        # emcc --clear-cache
+        emcmake cmake ..
+        export EMCC_CFLAGS="--no-entry -O3 -msimd128 -fno-rtti -DNDEBUG -flto=full -sBUILD_AS_WORKER=1 -sEXPORT_ALL=1 -sEXPORT_ES6=1 -sMODULARIZE=1 -sINITIAL_MEMORY=800MB -sMAXIMUM_MEMORY=4GB -sALLOW_MEMORY_GROWTH -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_wllama_start,_wllama_action,_wllama_exit,_wllama_decode_exception -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -s NO_EXIT_RUNTIME=1"
+        emmake make wllama -j

@@ -1,3 +1,4 @@
 /build
 /save_state_quant
 /*.bin
+/wasm/build
