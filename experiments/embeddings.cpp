@@ -35,6 +35,7 @@ int main(int argc, char ** argv) {
     {"n_ctx", 2048},
     {"n_threads", 4},
     {"embeddings", true}, // enable embeddings
+    {"pooling_type", "LLAMA_POOLING_TYPE_MEAN"},
   };
   res = action_load(app, req);
   std::cout << "action_load: " << res << "\n";
